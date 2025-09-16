@@ -8,4 +8,5 @@ cli-table = "0.5.0"
 colorful = "0.3.2"
 filesize = "0.2.0"
 human_bytes = { version = "0.4.3", default-features = false}
+indicatif = "0.18.0"
 walkdir = "2.5.0"

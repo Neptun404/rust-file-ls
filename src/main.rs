@@ -1,14 +1,16 @@
 extern crate colorful;
-use cli_table::{format::Justify, print_stdout, Cell, Style, Table};
+use cli_table::{Cell, Style, Table, format::Justify, print_stdout};
 use colorful::core::color_string::CString;
 use colorful::{Color, Colorful};
 use filesize;
 use human_bytes::human_bytes;
+use indicatif::ProgressBar;
 use std::cmp::Ordering;
 use std::env;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use walkdir;
 use walkdir::WalkDir;
 
@@ -17,6 +19,10 @@ fn main() {
     let directory = String::from(directory.to_str().unwrap());
 
     // directory.push_str("/src");
+    println!("Scanning directory: {}", directory);
+    println!("Press Ctrl+C to stop");
+    let progress_bar = ProgressBar::new_spinner();
+    progress_bar.enable_steady_tick(Duration::from_millis(100));
 
     let mut directory_contents = get_directory_contents(&directory);
     sort_directory_by_extension(&mut directory_contents);
@@ -32,8 +38,8 @@ fn main() {
         .iter()
         .enumerate()
         .map({
-            let mut sum_of_filesize = &mut sum_of_filesize;
-            let mut sum_of_disk_size = &mut sum_of_disk_size;
+            let sum_of_filesize = &mut sum_of_filesize;
+            let sum_of_disk_size = &mut sum_of_disk_size;
             move |(index, x1)| {
                 *sum_of_filesize += x1.file_size;
                 *sum_of_disk_size += x1.file_disk_size;
@@ -70,6 +76,8 @@ fn main() {
             "File Disk Size".cell().bold(true).justify(Justify::Center),
         ])
         .bold(true);
+
+    progress_bar.finish();
 
     print_stdout(table).expect("Failed to print table");
     println!("\nTotal Size: {}", format_filesize(sum_of_filesize));
