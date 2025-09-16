@@ -1,5 +1,5 @@
 extern crate colorful;
-use cli_table::{Cell, Style, Table, format::Justify, print_stdout};
+use cli_table::{format::Justify, print_stdout, Cell, Style, Table};
 use colorful::core::color_string::CString;
 use colorful::{Color, Colorful};
 use filesize;
@@ -7,15 +7,14 @@ use human_bytes::human_bytes;
 use std::cmp::Ordering;
 use std::env;
 use std::fs;
-use std::ops::Add;
 use std::os::unix::fs::MetadataExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use walkdir;
 use walkdir::WalkDir;
 
 fn main() {
     let directory = env::current_dir().expect("Failed to get current directory");
-    let mut directory = String::from(directory.to_str().unwrap());
+    let directory = String::from(directory.to_str().unwrap());
 
     // directory.push_str("/src");
 
@@ -28,13 +27,16 @@ fn main() {
     }
 
     let mut sum_of_filesize = 0;
+    let mut sum_of_disk_size = 0;
     let table = directory_contents
         .iter()
         .enumerate()
         .map({
             let mut sum_of_filesize = &mut sum_of_filesize;
+            let mut sum_of_disk_size = &mut sum_of_disk_size;
             move |(index, x1)| {
                 *sum_of_filesize += x1.file_size;
+                *sum_of_disk_size += x1.file_disk_size;
                 return vec![
                     (index + 1).cell().justify(Justify::Center),
                     x1.file_name.clone().cell().justify(Justify::Left),
@@ -71,16 +73,18 @@ fn main() {
 
     print_stdout(table).expect("Failed to print table");
     println!("\nTotal Size: {}", format_filesize(sum_of_filesize));
+    println!("Total Disks Size: {}", format_filesize(sum_of_disk_size));
 }
 
 fn format_filesize(filesize: u64) -> CString {
-    let upper_threshold: u64 = 50 * 1000 * 1000; // 50 gigabytes
+    let upper_threshold: u64 = 1 * 1000 * 1000 * 1000; // 1 gigabytes
+    let five_hundred_megabytes: u64 = 500 * 1000 * 1000;
     let mut color: Option<Color> = None; // Default color
     if filesize >= upper_threshold {
         color = Option::from(Color::LightRed);
-    } else if filesize > 524288000 && filesize <= 1073741824 {
+    } else if filesize > five_hundred_megabytes && filesize < upper_threshold {
         color = Option::from(Color::Yellow1)
-    } else if filesize <= 524288000 {
+    } else if filesize <= five_hundred_megabytes {
         color = Option::from(Color::PaleGreen1a);
     }
 
@@ -112,33 +116,9 @@ fn get_directory_contents(path: &String) -> Vec<FileInfo> {
         let entry = entry.unwrap();
         let file_type = entry.file_type().unwrap();
         let file_name = String::from(entry.file_name().to_str().unwrap());
-        // let file_size = entry.metadata().unwrap().size();
 
-        // Handle file size calculation differently based on the file type
-        let file_size: u64 = match file_type.is_dir() {
-            true => {
-                let mut file_size = 0;
-                for entry in WalkDir::new(entry.path()) {
-                    let entry = entry.unwrap();
-                    file_size = entry.metadata().unwrap().size();
-                }
-                file_size
-            }
-            false => entry.metadata().unwrap().size(),
-        };
-
-        // Handle file disk size calculation differently based on the file type
-        let file_disk_size: u64 = match file_type.is_dir() {
-            true => {
-                let mut file_disk_size = 0;
-                for entry in WalkDir::new(entry.path()) {
-                    let entry = entry.unwrap();
-                    file_disk_size = filesize::file_real_size(entry.path()).unwrap_or(0);
-                }
-                file_disk_size
-            }
-            false => filesize::file_real_size(entry.path()).unwrap_or(0),
-        };
+        let file_size: u64 = get_file_size(entry.path(), file_type.is_dir());
+        let file_disk_size: u64 = get_file_disk_size(entry.path(), file_type.is_dir());
 
         let file_extension = if file_type.is_file() {
             Some(String::from(match Path::new(&file_name).extension() {
@@ -172,4 +152,33 @@ struct FileInfo {
     file_size: u64,
     file_disk_size: u64,
     file_is_directory: bool,
+}
+
+// Helper functions
+fn get_file_size(path: PathBuf, is_dir: bool) -> u64 {
+    match is_dir {
+        true => {
+            let mut file_size = 0;
+            for entry in WalkDir::new(path) {
+                let entry = entry.unwrap();
+                file_size += entry.metadata().unwrap().size();
+            }
+            file_size
+        }
+        false => path.metadata().unwrap().size(),
+    }
+}
+
+fn get_file_disk_size(path: PathBuf, is_dir: bool) -> u64 {
+    match is_dir {
+        true => {
+            let mut file_disk_size = 0;
+            for entry in WalkDir::new(path) {
+                let entry = entry.unwrap();
+                file_disk_size += filesize::file_real_size(entry.path()).unwrap_or(0);
+            }
+            file_disk_size
+        }
+        false => filesize::file_real_size(path).unwrap_or(0),
+    }
 }
